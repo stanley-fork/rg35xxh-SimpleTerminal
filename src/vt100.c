@@ -479,14 +479,14 @@ void csi_parse(void) {
     char *p = csiescseq.buf;
 
     csiescseq.narg = 0;
-    if (*p == '?') csiescseq.priv = 1, p++;
+    if (*p == '?' || *p == '>' || *p == '!') csiescseq.priv = 1, p++;
 
     while (p < csiescseq.buf + csiescseq.len) {
         while (isdigit(*p)) {
             csiescseq.arg[csiescseq.narg] *= 10;
             csiescseq.arg[csiescseq.narg] += *p++ - '0' /*, noarg = 0 */;
         }
-        if (*p == ';' && csiescseq.narg + 1 < ESC_ARG_SIZ) {
+        if (((*p == ';') || (*p == ':')) && csiescseq.narg + 1 < ESC_ARG_SIZ) {
             csiescseq.narg++, p++;
         } else {
             csiescseq.mode = *p;
@@ -640,14 +640,19 @@ void t_set_attr(int *attr, int l) {
                 break;
             case 38:
                 if (i + 2 < l && attr[i + 1] == 5) {
+                    /* 256-color mode: 38;5;N */
                     i += 2;
                     if (BETWEEN(attr[i], 0, 255)) {
                         term.c.attr.fg = attr[i];
                     } else {
                         fprintf(stderr, "erresc: bad fgcolor %d\n", attr[i]);
                     }
-                } else {
-                    fprintf(stderr, "erresc(38): gfx attr %d unknown\n", attr[i]);
+                } else if (i + 4 < l && attr[i + 1] == 2) {
+                    /* RGB color mode: 38;2;R;G;B - silently use first color component */
+                    i += 4;
+                    if (BETWEEN(attr[i - 2], 0, 255)) {
+                        term.c.attr.fg = attr[i - 2];  /* Use R component as palette index */
+                    }
                 }
                 break;
             case 39:
@@ -655,14 +660,19 @@ void t_set_attr(int *attr, int l) {
                 break;
             case 48:
                 if (i + 2 < l && attr[i + 1] == 5) {
+                    /* 256-color mode: 48;5;N */
                     i += 2;
                     if (BETWEEN(attr[i], 0, 255)) {
                         term.c.attr.bg = attr[i];
                     } else {
                         fprintf(stderr, "erresc: bad bgcolor %d\n", attr[i]);
                     }
-                } else {
-                    fprintf(stderr, "erresc(48): gfx attr %d unknown\n", attr[i]);
+                } else if (i + 4 < l && attr[i + 1] == 2) {
+                    /* RGB color mode: 48;2;R;G;B - silently use first color component */
+                    i += 4;
+                    if (BETWEEN(attr[i - 2], 0, 255)) {
+                        term.c.attr.bg = attr[i - 2];  /* Use R component as palette index */
+                    }
                 }
                 break;
             case 49:
@@ -774,14 +784,15 @@ void t_set_mode(bool priv, bool set, int *args, int narg) {
                 case 2004: /* bracketed paste mode */
                     // MODBIT(term.mode, set, MODE_BRACKETPASTE);
                     break;
+                case 3: /* DECCOLM -- Column (NOT SUPPORTED) */
+                case 4: /* DECSCLM -- Scroll (NOT SUPPORTED) */
+                case 69: /* DECVCCM -- Vertical cursor coupling (NOT SUPPORTED) */
+                case 1006: /* SGR mouse (NOT SUPPORTED) */
+                case 1015: /* URXVT mouse (NOT SUPPORTED) */
+                    /* Silently ignore unsupported modes */
+                    break;
                 default:
-                    /* case 2:  DECANM -- ANSI/VT52 (NOT SUPPOURTED) */
-                    /* case 3:  DECCOLM -- Column  (NOT SUPPORTED) */
-                    /* case 4:  DECSCLM -- Scroll (NOT SUPPORTED) */
-                    /* case 18: DECPFF -- Printer feed (NOT SUPPORTED) */
-                    /* case 19: DECPEX -- Printer extent (NOT SUPPORTED) */
-                    /* case 42: DECNRCM -- National characters (NOT SUPPORTED) */
-                    fprintf(stderr, "erresc: unknown private set/reset mode %d\n", *args);
+                    /* Other unknown modes - silently ignore */
                     break;
             }
         } else {
@@ -800,7 +811,7 @@ void t_set_mode(bool priv, bool set, int *args, int narg) {
                     MODBIT(term.mode, set, MODE_CRLF);
                     break;
                 default:
-                    fprintf(stderr, "erresc: unknown set/reset mode %d\n", *args);
+                    /* Silently ignore unknown modes */
                     break;
             }
         }
@@ -913,6 +924,13 @@ void csi_handle(void) {
                 case 2: /* all */
                     t_clear_region(0, 0, term.col - 1, term.row - 1);
                     break;
+                case 3: /* all including scrollback */
+                    t_clear_region(0, 0, term.col - 1, term.row - 1);
+                    /* Clear scrollback buffer */
+                    term.scrollback_count = 0;
+                    term.scrollback_pos = 0;
+                    term.scroll_offset = 0;
+                    break;
                 default:
                     goto unknown;
             }
@@ -991,6 +1009,12 @@ void csi_handle(void) {
             break;
         case 'u': /* DECRC -- Restore cursor position (ANSI.SYS) */
             t_cursor(CURSOR_LOAD);
+            break;
+        case 'p': /* DECSTR -- Soft Terminal Reset (ESC[!p) */
+            if (csiescseq.priv) {
+                /* Reset terminal to initial state */
+                t_reset();
+            }
             break;
     }
 }
