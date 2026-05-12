@@ -729,15 +729,15 @@ void draw_string_ttf(SDL_Surface *surface, const char *text, int x, int y, SDL_C
 
     SDL_Surface *text_surface;
     if (ttf_font_shade == 2) {  // highest quality
-        text_surface = TTF_RenderText_Shaded(ttf_font, text, fg, bg);
+        text_surface = TTF_RenderUTF8_Shaded(ttf_font, text, fg, bg);
     } else if (ttf_font_shade == 1) {  // medium quality
-        text_surface = TTF_RenderText_Blended(ttf_font, text, fg);
+        text_surface = TTF_RenderUTF8_Blended(ttf_font, text, fg);
     } else {
-        text_surface = TTF_RenderText_Solid(ttf_font, text, fg);
+        text_surface = TTF_RenderUTF8_Solid(ttf_font, text, fg);
     }
 
     if (!text_surface) {
-        fprintf(stderr, "TTF_RenderText_Shaded %s failed: %s\n", text, TTF_GetError());
+        fprintf(stderr, "TTF_RenderUTF8_Shaded %s failed: %s\n", text, TTF_GetError());
         return;
     }
 
